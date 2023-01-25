@@ -3,10 +3,8 @@ package main
 import (
 	"fmt"
 	"image"
-	"image/color"
 	"image/jpeg"
 	"image/png"
-	"log"
 	"os"
 	"strings"
 
@@ -14,81 +12,28 @@ import (
 	"golang.org/x/image/webp"
 )
 
-func bmpImage(file string) (image.Image, error) {
+func MetaImage(file string, offX, offY int) (func(int, int) (int, int, int, bool), error) {
 	data, err := os.Open(file)
 	if err != nil {
 		return nil, fmt.Errorf("can't read file %s: %v", file, err)
 	}
-
-	img, err := bmp.Decode(data)
-	if err != nil {
-		return nil, fmt.Errorf("can't decode image: %v", err)
-	}
-
-	return img, nil
-}
-
-func pngImage(file string) (image.Image, error) {
-	data, err := os.Open(file)
-	if err != nil {
-		return nil, fmt.Errorf("can't read file %s: %v", file, err)
-	}
-
-	img, err := png.Decode(data)
-	if err != nil {
-		return nil, fmt.Errorf("can't decode image: %v", err)
-	}
-
-	return img, nil
-}
-
-func webpImage(file string) (image.Image, error) {
-	data, err := os.Open(file)
-	if err != nil {
-		return nil, fmt.Errorf("can't read file %s: %v", file, err)
-	}
-
-	img, err := webp.Decode(data)
-	if err != nil {
-		return nil, fmt.Errorf("can't decode image: %v", err)
-	}
-
-	return img, nil
-}
-
-func jpgImage(file string) (image.Image, error) {
-	data, err := os.Open(file)
-	if err != nil {
-		return nil, fmt.Errorf("can't read file %s: %v", file, err)
-	}
-
-	img, err := jpeg.Decode(data)
-	if err != nil {
-		return nil, fmt.Errorf("can't decode image: %v", err)
-	}
-
-	return img, nil
-}
-
-func MetaImage(file string, offX, offY int) func(int, int) (int, int, int, bool) {
-	parts := strings.Split(file, ".")
-	ext := parts[len(parts)-1]
 
 	var img image.Image
-	var err error
+	parts := strings.Split(file, ".")
+	ext := strings.ToLower(parts[len(parts)-1])
 	if ext == "png" {
-		img, err = pngImage(file)
+		img, err = png.Decode(data)
 	} else if ext == "bmp" {
-		img, err = bmpImage(file)
+		img, err = bmp.Decode(data)
 	} else if ext == "webp" {
-		img, err = webpImage(file)
+		img, err = webp.Decode(data)
 	} else if ext == "jpg" || ext == "jpeg" {
-		img, err = jpgImage(file)
+		img, err = jpeg.Decode(data)
 	} else {
 		err = fmt.Errorf("unknown extension %s", ext)
 	}
 	if err != nil {
-		log.Fatalf("err: %v", err)
+		return nil, fmt.Errorf("can't decode image: %v", err)
 	}
 
 	f := func(x, y int) (int, int, int, bool) {
@@ -99,10 +44,9 @@ func MetaImage(file string, offX, offY int) func(int, int) (int, int, int, bool)
 			y < offY {
 			return 0, 0, 0, false
 		}
-		c := color.RGBAModel.Convert(img.At(x-offX, y-offY))
-		r, g, b, a := c.RGBA()
-		return int(r / 255), int(g / 255), int(b / 255), bool(a != 0)
+		r, g, b, a := img.At(x-offX, y-offY).RGBA()
+		return int(r / 256), int(g / 256), int(b / 256), bool(a != 0)
 	}
 
-	return f
+	return f, nil
 }

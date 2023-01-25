@@ -25,12 +25,12 @@ type Sprite struct {
 	}
 }
 
-func (sp Sprite) Render(init, step int) string {
+func (sp Sprite) Render() string {
 	parts := []string{}
-	for y := init; y+init < sp.SizeY; y += step {
-		for x := init; x+init < sp.SizeX; x += step {
+	for y := 0; y < sp.SizeY; y += 1 {
+		for x := 0; x < sp.SizeX; x += 1 {
 			pxl := sp.Data[x*sp.SizeX+y]
-			parts = append(parts, fmt.Sprintf("PX %d %d %X%X%X", x+sp.StartX, y+sp.StartY, pxl.R, pxl.G, pxl.B))
+			parts = append(parts, fmt.Sprintf("PX %d %d %02X%02X%02X", x+sp.StartX, y+sp.StartY, pxl.R, pxl.G, pxl.B))
 		}
 	}
 
@@ -47,6 +47,7 @@ type PF struct {
 type PFC struct {
 	Num    int
 	rd     *bufio.Reader
+	rs     *bufio.Scanner
 	wr     *bufio.Writer
 	conn   net.Conn
 	pxlbuf []string
@@ -60,10 +61,12 @@ func (pfc *PFC) cmd(command string) (string, error) {
 	log.Printf("Wrote %d bytes", num)
 	pfc.wr.Flush()
 
-	out, err := pfc.rd.ReadString('\n')
+	pfc.rs.Scan()
+	err = pfc.rs.Err()
 	if err != nil {
 		return "", fmt.Errorf("Can't read answer: %v", err)
 	}
+	out := pfc.rs.Text()
 
 	return out, nil
 }
@@ -82,7 +85,7 @@ func (pfc *PFC) Size() (int, int, error) {
 		return 0, 0, fmt.Errorf("Can't get size: %v", err)
 	}
 
-	parts := strings.Split(out[:len(out)-1], " ")
+	parts := strings.Split(out, " ")
 	xsize, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return 0, 0, fmt.Errorf("Can't convert %s to int: %v", parts[1], err)
@@ -110,6 +113,7 @@ func (pf *PF) Connect(host, port string, connections int) error {
 				return err
 			}
 		}
+		log.Printf("size: %d %d", pf.SizeX, pf.SizeY)
 
 		pf.Conns = append(pf.Conns, c)
 	}
@@ -130,7 +134,7 @@ func (pf *PF) Run() {
 		for _, sp := range pf.Sprites {
 			ch <- sp
 		}
-		log.Printf("loop")
+		//log.Printf("loop")
 	}
 
 }
@@ -187,6 +191,7 @@ func (pfc *PFC) Connect(host, port string) error {
 
 	pfc.conn = conn
 	pfc.rd = bufio.NewReader(conn)
+	pfc.rs = bufio.NewScanner(conn)
 	pfc.wr = bufio.NewWriter(conn)
 
 	return nil
@@ -209,15 +214,12 @@ func (pfc *PFC) Pixel(x, y, r, g, b int) error {
 }
 
 func (pfc *PFC) Draw(queue chan Sprite) {
-	step := 1
-	init := 0
 	for s := range queue {
-		cmds := s.Render(init, step)
+		cmds := s.Render()
 		err := pfc.px(cmds)
 		if err != nil {
 			log.Fatalf("err: %v", err)
 		}
-		//init = (init + 1) % step
 	}
 }
 
@@ -232,18 +234,26 @@ func main() {
 
 	log.Printf("argcount: %d", len(os.Args))
 	pf := PF{}
-	pf.Connect(os.Args[1], os.Args[2], 10)
+	pf.Connect(os.Args[1], os.Args[2], 8)
 
 	if len(os.Args) == 3 {
 		pf.Fill(Color1)
 	}
 	if len(os.Args) == 4 {
-		pf.Fill(MetaImage(os.Args[3], 0, 0))
+		fillFunc, err := MetaImage(os.Args[3], 0, 0)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pf.Fill(fillFunc)
 	}
 	if len(os.Args) == 6 {
 		x, _ := strconv.Atoi(os.Args[4])
 		y, _ := strconv.Atoi(os.Args[5])
-		pf.Fill(MetaImage(os.Args[3], x, y))
+		fillFunc, err := MetaImage(os.Args[3], x, y)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pf.Fill(fillFunc)
 	}
 	pf.Run()
 
